@@ -1,35 +1,44 @@
 #include "cautoupdatergithub.h"
 #include "updateinstaller.hpp"
 
-#include <QCollator>
 #include <QCoreApplication>
+#include <QDate>
 #include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkRequest>
 #include <QNetworkReply>
 
+
 #include <assert.h>
 
-#if defined _WIN32
-#define UPDATE_FILE_EXTENSION QLatin1String(".exe")
-#elif defined __APPLE__
-#define UPDATE_FILE_EXTENSION QLatin1String(".dmg")
-#else
-#define UPDATE_FILE_EXTENSION QLatin1String(".AppImage")
+#if !defined UPDATE_FILE_EXTENSION
+    #if defined _WIN32
+    #define UPDATE_FILE_EXTENSION QLatin1String(".exe")
+    #elif defined __APPLE__
+    #define UPDATE_FILE_EXTENSION QLatin1String(".dmg")
+    #else
+    #define UPDATE_FILE_EXTENSION QLatin1String(".AppImage")
+    #endif
 #endif
 
-static const auto naturalSortQstringComparator = [](const QString& l, const QString& r) {
-	static QCollator collator;
-	collator.setNumericMode(true);
-	collator.setCaseSensitivity(Qt::CaseInsensitive);
-	return collator.compare(l, r) == -1;
-};
+#if !defined OS_JSON
+    #if defined _WIN32
+    #define OS_JSON "Windows"
+    #elif defined __APPLE__
+    #define OS_JSON "MacOS"
+    #else
+    #define OS_JSON ""
+    #endif
+#endif
 
-CAutoUpdaterGithub::CAutoUpdaterGithub(const QString& githubRepositoryAddress, const QString& currentVersionString, const std::function<bool (const QString&, const QString&)>& versionStringComparatorLessThan) :
-	_updatePageAddress(githubRepositoryAddress + "/releases/"),
-	_currentVersionString(currentVersionString),
-	_lessThanVersionStringComparator(versionStringComparatorLessThan ? versionStringComparatorLessThan : naturalSortQstringComparator)
+const QString CAutoUpdaterGithub::_versionFormat("yyyy.MM.dd");
+
+CAutoUpdaterGithub::CAutoUpdaterGithub(const QString& githubRepositoryAddress, const QString& currentVersionString) :
+	_updatePageAddress(githubRepositoryAddress),
+	_currentVersionString(currentVersionString)
 {
-	assert(githubRepositoryAddress.contains("https://github.com/"));
+	assert(githubRepositoryAddress.contains("https://raw.githubusercontent.com/"));
 	assert(!currentVersionString.isEmpty());
 }
 
@@ -80,33 +89,6 @@ void CAutoUpdaterGithub::downloadAndInstallUpdate(const QString& updateUrl)
 	connect(reply, &QNetworkReply::finished, this, &CAutoUpdaterGithub::updateDownloaded, Qt::UniqueConnection);
 }
 
-static QString match(const QString& pattern, const QString& text, int from, int& end)
-{
-	end = -1;
-
-	const auto delimiters = pattern.split('*');
-	if (delimiters.size() != 2)
-	{
-		Q_ASSERT_X(delimiters.size() != 2, __FUNCTION__, "Invalid pattern");
-		return {};
-	}
-
-	const int leftDelimiterStart = text.indexOf(delimiters[0], from);
-	if (leftDelimiterStart < 0)
-		return {};
-
-	const int rightDelimiterStart = text.indexOf(delimiters[1], leftDelimiterStart + delimiters[0].length());
-	if (rightDelimiterStart < 0)
-		return {};
-
-	const int resultLength = rightDelimiterStart - leftDelimiterStart - delimiters[0].length();
-	if (resultLength <= 0)
-		return {};
-
-	end = rightDelimiterStart + delimiters[1].length();
-	return text.mid(leftDelimiterStart + delimiters[0].length(), resultLength);
-}
-
 void CAutoUpdaterGithub::updateCheckRequestFinished()
 {
 	auto reply = qobject_cast<QNetworkReply *>(sender());
@@ -130,44 +112,30 @@ void CAutoUpdaterGithub::updateCheckRequestFinished()
 		return;
 	}
 
-	ChangeLog changelog;
-	const QString changelogPattern = QStringLiteral("<div class=\"markdown-body\">\n*</div>");
-	const QString versionPattern = QStringLiteral("/releases/tag/*\">");
-	const QString releaseUrlPattern = QStringLiteral("<a href=\"*\"");
+    ChangeLog changelog;
+    const auto data = QString(reply->readAll());
+    const auto json = QJsonDocument::fromJson(data.toUtf8()).object();
+    if (json.contains(OS_JSON) && json[OS_JSON].isObject()) {
+        const auto osJson = json[OS_JSON].toObject();
+        if (osJson.contains("version") && osJson["version"].isString() &&
+        osJson.contains("url") && osJson["url"].isString()) {
 
-	const auto releases = QString(reply->readAll()).split("release-header");
-	// Skipping the 0 item because anything before the first "release-header" is not a release
-	for (int releaseIndex = 1, numItems = releases.size(); releaseIndex < numItems; ++releaseIndex)
-	{
-		const QString& releaseText = releases[releaseIndex];
+            bool hasChangelog = osJson.contains("changelog") && osJson["changelog"].isString();
+            auto version = osJson["version"].toString();
+            auto versionDate = QDate::fromString(version, _versionFormat);
+            auto currentVersionDate = QDate::fromString(_currentVersionString, _versionFormat);
 
-		int offset = 0;
-		QString updateVersion = match(versionPattern, releaseText, offset, offset);
-		if (updateVersion.startsWith(QStringLiteral(".v")))
-			updateVersion.remove(0, 2);
-		else if (updateVersion.startsWith('v'))
-			updateVersion.remove(0, 1);
+            if (currentVersionDate < versionDate) {
+               VersionEntry entry {
+                    .versionUpdateUrl = osJson["url"].toString(),
+                    .versionString = osJson["version"].toString(),
+                    .versionChanges = hasChangelog ? "<br />" + osJson["changelog"].toString().replace("\n", "<br />") : ""
+                };
 
-		if (!naturalSortQstringComparator(_currentVersionString, updateVersion))
-			continue; // version <= _currentVersionString, skipping
-
-		const QString updateChanges = match(changelogPattern, releaseText, offset, offset);
-
-		QString url;
-		offset = 0; // Gotta start scanning from the beginning again, since the release URL could be before the release description
-		while (offset != -1)
-		{
-			const QString newUrl = match(releaseUrlPattern, releaseText, offset, offset);
-			if (newUrl.endsWith(UPDATE_FILE_EXTENSION))
-			{
-				Q_ASSERT_X(url.isEmpty(), __FUNCTION__,"More than one suitable update URL found");
-				url = newUrl;
-			}
-		}
-
-		if (!url.isEmpty())
-			changelog.push_back({ updateVersion, updateChanges, "https://github.com" + url });
-	}
+                changelog.push_back(entry);
+            }
+        }
+    }
 
 	if (_listener)
 		_listener->onUpdateAvailable(changelog);
@@ -191,8 +159,10 @@ void CAutoUpdaterGithub::updateDownloaded()
 		return;
 	}
 
-	if (_listener)
-		_listener->onUpdateDownloadFinished();
+	if (_listener) {
+	    _listener->onUpdateDownloadProgress(100);
+            _listener->onUpdateDownloadFinished();
+        }
 
 	if (!UpdateInstaller::install(_downloadedBinaryFile.fileName()) && _listener)
 		_listener->onUpdateError("Failed to launch the downloaded update.");

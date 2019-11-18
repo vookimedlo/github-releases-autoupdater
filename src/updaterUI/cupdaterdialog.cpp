@@ -2,8 +2,6 @@
 
 #include "ui_cupdaterdialog.h"
 
-#include <QDebug>
-#include <QDesktopServices>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStringBuilder>
@@ -39,7 +37,6 @@ CUpdaterDialog::~CUpdaterDialog()
 
 void CUpdaterDialog::applyUpdate()
 {
-#ifdef _WIN32
 	ui->progressBar->setMaximum(100);
 	ui->progressBar->setValue(0);
 	ui->lblPercentage->setVisible(true);
@@ -47,7 +44,7 @@ void CUpdaterDialog::applyUpdate()
 	ui->stackedWidget->setCurrentIndex(0);
 
 	_updater.downloadAndInstallUpdate(_latestUpdateUrl);
-#else
+#if 0
 	QMessageBox msg(
 		QMessageBox::Question,
 		tr("Manual update required"),

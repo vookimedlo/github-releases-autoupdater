@@ -3,9 +3,8 @@
 #include <QApplication>
 #include <QDebug>
 #include <QFileInfo>
+#include <QMessageBox>
 #include <QProcess>
-
-#include <cstdlib>
 
 #define report_error(message) {qInfo() << message; return false;}
 
@@ -17,6 +16,14 @@ bool UpdateInstaller::install(const QString& downloadedUpdateFilePath)
 	const QString applicationBinaryName = QFileInfo(QApplication::applicationFilePath()).completeBaseName();
 	if (applicationBinaryName.isEmpty())
 		report_error("Failed to determine the application binary name.");
+
+    QMessageBox msg(
+            QMessageBox::Information,
+            "Update ready!",
+            "Application will be closed.\nPlease, update the application in the window that will be opened.",
+            QMessageBox::Ok,
+            qApp->activeWindow());
+    msg.exec();
 
 	QProcess hdiutil;
 	hdiutil.start("hdiutil", {"attach", downloadedUpdateFilePath});
@@ -33,7 +40,9 @@ bool UpdateInstaller::install(const QString& downloadedUpdateFilePath)
 	if (!QFileInfo::exists(bundlePath))
 		report_error("No bundle found at" << bundlePath);
 
-	std::system(("cp -R " + bundlePath + " " + QString(QApplication::applicationDirPath() + "/../../").replace(" ", "\\ ")).toUtf8().constData());
+	//std::system(("cp -R " + bundlePath + " " + QString(QApplication::applicationDirPath() + "/../../").replace(" ", "\\ ")).toUtf8().constData());
+
+	QApplication::quit();
 
 	return true;
 }

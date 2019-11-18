@@ -10,7 +10,7 @@
     <x>0</x>
     <y>0</y>
     <width>564</width>
-    <height>331</height>
+    <height>255</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -93,6 +93,11 @@
        </item>
        <item>
         <widget class="QTextEdit" name="changeLogViewer">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
          <property name="undoRedoEnabled">
           <bool>false</bool>
          </property>

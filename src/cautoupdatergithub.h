@@ -4,7 +4,6 @@
 #include <QNetworkAccessManager>
 #include <QString>
 
-#include <functional>
 #include <vector>
 
 class CAutoUpdaterGithub : public QObject
@@ -29,8 +28,7 @@ public:
 public:
 	// If the string comparison functior is not supplied, case-insensitive natural sorting is used (using QCollator)
 	CAutoUpdaterGithub(const QString& githubRepositoryAddress,
-					   const QString& currentVersionString,
-					   const std::function<bool (const QString&, const QString&)>& versionStringComparatorLessThan = std::function<bool (const QString&, const QString&)>());
+					   const QString& currentVersionString);
 
 	CAutoUpdaterGithub& operator=(const CAutoUpdaterGithub& other) = delete;
 
@@ -49,8 +47,8 @@ private:
 	QFile _downloadedBinaryFile;
 	const QString _updatePageAddress;
 	const QString _currentVersionString;
-	const std::function<bool (const QString&, const QString&)> _lessThanVersionStringComparator;
-
+    static const QString _versionFormat;
+    
 	UpdateStatusListener* _listener = nullptr;
 
 	QNetworkAccessManager _networkManager;
