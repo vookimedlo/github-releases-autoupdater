@@ -40,6 +40,7 @@ CAutoUpdaterGithub::CAutoUpdaterGithub(const QString& githubRepositoryAddress, c
 {
 	assert(githubRepositoryAddress.contains("https://raw.githubusercontent.com/"));
 	assert(!currentVersionString.isEmpty());
+        qDebug() << QSslSocket::supportsSsl() << QSslSocket::sslLibraryBuildVersionString() << QSslSocket::sslLibraryVersionString();
 }
 
 void CAutoUpdaterGithub::setUpdateStatusListener(UpdateStatusListener* listener)
@@ -127,9 +128,10 @@ void CAutoUpdaterGithub::updateCheckRequestFinished()
 
             if (currentVersionDate < versionDate) {
                VersionEntry entry {
-                    .versionUpdateUrl = osJson["url"].toString(),
-                    .versionString = osJson["version"].toString(),
-                    .versionChanges = hasChangelog ? "<br />" + osJson["changelog"].toString().replace("\n", "<br />") : ""
+                   osJson["version"].toString(),
+                   hasChangelog ? "<br />" + osJson["changelog"].toString().replace("\n", "<br />")
+                                                                   : "",
+                   osJson["url"].toString()
                 };
 
                 changelog.push_back(entry);
